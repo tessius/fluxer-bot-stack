@@ -1,0 +1,88 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - bgutil-pot
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      NODE_ENV: production
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=1024 --openssl-legacy-provider}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
+      MONGODB_DB: ${MONGODB_DB:-fluxer_music_bot}
+      MONGODB_MAX_POOL_SIZE: ${MONGODB_MAX_POOL_SIZE:-20}
+      MONGODB_MIN_POOL_SIZE: ${MONGODB_MIN_POOL_SIZE:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_BASE: ${API_BASE:-https://api.fluxer.app/v1}
+      GATEWAY_URL: ${GATEWAY_URL:-wss://gateway.fluxer.app}
+      GATEWAY_INTENTS: ${GATEWAY_INTENTS:-0}
+      GATEWAY_PRESENCE_ENABLED: ${GATEWAY_PRESENCE_ENABLED:-0}
+      PREFIX: ${PREFIX:-!}
+      MAX_PLAYLIST_TRACKS: ${MAX_PLAYLIST_TRACKS:-25}
+      APPLE_MUSIC_MEDIA_API_TOKEN: ${APPLE_MUSIC_MEDIA_API_TOKEN:-}
+      APPLE_MUSIC_AUTO_TOKEN: ${APPLE_MUSIC_AUTO_TOKEN:-1}
+      APPLE_MUSIC_MARKET: ${APPLE_MUSIC_MARKET:-US}
+      FFMPEG_BIN: /usr/bin/ffmpeg
+      YTDLP_BIN: /usr/local/bin/yt-dlp
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
+      YTDLP_YOUTUBE_CLIENT: ${YTDLP_YOUTUBE_CLIENT:-mweb}
+      YTDLP_EXTRA_ARGS: ${YTDLP_EXTRA_ARGS:---plugin-dirs,/etc/yt-dlp/plugins,--js-runtimes,node,--remote-components,ejs:github,--extractor-args,youtubepot-bgutilhttp:base_url=http://bgutil-pot:4416}
+      YTDLP_PROXY_URL: ${YTDLP_PROXY_URL:-}
+      MONITORING_ENABLED: ${MONITORING_ENABLED:-1}
+      MONITORING_HOST: 0.0.0.0
+      MONITORING_PORT: ${MONITORING_PORT:-9091}
+      VOICE_MAX_BITRATE: ${VOICE_MAX_BITRATE:-128000}
+      MEMORY_RSS_EXIT_MB: ${MEMORY_RSS_EXIT_MB:-1536}
+      BOT_OWNER_USER_ID: ${BOT_OWNER_USER_ID:-}
+    volumes:
+      - /vinto/cookies.txt:/app/cookies.txt:ro
+      - /opt/vinto/gateway.js:/app/dist/src/gateway.js
+    ports:
+      - "${MONITORING_PORT:-9091}:${MONITORING_PORT:-9091}"
+    logging:
+      driver: json-file
+      options:
+        max-size: ${APP_LOG_MAX_SIZE:-50m}
+        max-file: ${APP_LOG_MAX_FILE:-5}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('node:http');const port=process.env.MONITORING_PORT||9091;http.get({host:'127.0.0.1',port,path:'/readyz'},(res)=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGODB_DB:-fluxer_music_bot}
+    volumes:
+      - mongo_data:/data/db
+    logging:
+      driver: json-file
+      options:
+        max-size: ${MONGO_LOG_MAX_SIZE:-25m}
+        max-file: ${MONGO_LOG_MAX_FILE:-3}
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --host 127.0.0.1 --eval \"quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  bgutil-pot:
+    image: ${BGUTIL_POT_PROVIDER_IMAGE:-brainicism/bgutil-ytdlp-pot-provider:1.3.1-node}
+    restart: unless-stopped
+    expose:
+      - "4416"
+    logging:
+      driver: json-file
+      options:
+        max-size: ${BGUTIL_POT_LOG_MAX_SIZE:-10m}
+        max-file: ${BGUTIL_POT_LOG_MAX_FILE:-3}
+
+volumes:
+  mongo_data:

@@ -1,0 +1,11 @@
+services:
+  redfluxer:
+    build: .
+    container_name: redfluxer
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: YOUR_BOT_TOKEN
+      PREFIX: "!"
+      OWNER_ID: "YOUR_USER_ID"
+    volumes:
+      - /opt/redfluxer/data:/data

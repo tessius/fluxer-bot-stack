@@ -275,6 +275,8 @@ API_BASE=https://YOUR_DOMAIN/api/v1
 GATEWAY_URL=wss://YOUR_DOMAIN/gateway
 MONGODB_URI=mongodb://mongo:27017
 ```
+> **Note:** Find `VOICE_MAX_BITRATE` in the `.env` file and set it to match your Fluxer voice channel's bitrate in bps (e.g. `VOICE_MAX_BITRATE=64000` for 64kbps). Mismatching this causes frequent voice disconnections.
+
 
 ### 3. Start the bot
 

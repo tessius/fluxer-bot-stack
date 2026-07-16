@@ -1,6 +1,6 @@
 # Self-Hosted Fluxer Bot Stack — Installation Guide
 
-This guide covers installing a full-featured bot stack on a self-hosted Fluxer instance. It includes **Red-Fluxer** (moderation, leveling, custom commands, and more), **Vinto Music Bot** (YouTube, SoundCloud, Spotify, Deezer), **RoleBot** (reaction roles), and **Fluxy** (moderation, admin, welcome messages, leveling, tickets, and a web dashboard).
+This guide covers installing a full-featured bot stack on a self-hosted Fluxer instance. It includes **Red-Fluxer** (moderation, leveling, custom commands, and more), **Vinto Music Bot** (YouTube, SoundCloud, Spotify, Deezer), **RoleBot** (reaction roles), **Fluxy** (moderation, admin, welcome messages, leveling, tickets, and a web dashboard), and **Astrokat** (utilities, fun, XP, reminders).
 
 > **Tested on:** Ubuntu 24.04 Server with Docker Engine installed  
 > **Fluxer version:** Self-hosted via official docker-compose stack
@@ -583,15 +583,107 @@ http://YOUR_BOT_DOMAIN:4000
 
 ---
 
+## Astrokat
+
+A multi-purpose utility bot covering fun commands, XP leveling, reputation, reminders, dice rolls, Wikipedia lookups, translations, and more.
+
+> Based on: [mizarc/astrokat](https://github.com/mizarc/astrokat)
+
+### 1. Create the bot application
+
+Use the curl command above with `"name":"Astrokat"`. Note the `bot.id` (Client ID) and `bot.token`.
+
+### 2. Set up the directory
+
+```bash
+mkdir /opt/bots/astrokat && cd /opt/bots/astrokat
+git clone https://github.com/mizarc/astrokat.git .
+cp .env.example .env
+nano .env
+```
+
+Set these values:
+
+```env
+ADAPTERS=fluxer
+FLUXER_TOKEN=YOUR_BOT_TOKEN
+BOT_OPERATOR_IDS=YOUR_USER_ID
+FLUXER_API_URL=https://YOUR_DOMAIN/api
+FLUXER_GATEWAY_URL=wss://YOUR_DOMAIN/gateway
+```
+
+Make sure `DATABASE_URL` is commented out to use SQLite.
+
+### 3. Patch the Fluxer adapter
+
+Astrokat's `@fluxerjs/core` library hardcodes `api.fluxer.app`. Extract and patch the adapter:
+
+```bash
+docker run --rm ghcr.io/mizarc/astrokat:latest sh -c "cat /app/dist/adapters/fluxer.js" > /opt/bots/astrokat/fluxer.js
+nano /opt/bots/astrokat/fluxer.js
+```
+
+Find:
+```js
+new Client({ intents: 0 })
+```
+
+Change to:
+```js
+new Client({ intents: 0, rest: { api: process.env.FLUXER_API_URL ?? "https://api.fluxer.app" }, ws: { url: process.env.FLUXER_GATEWAY_URL ?? "wss://gateway.fluxer.app" } })
+```
+
+Then add the volume mount to `docker-compose.yml` under the `astrokat-sqlite` service volumes:
+
+```yaml
+- /opt/bots/astrokat/fluxer.js:/app/dist/adapters/fluxer.js
+```
+
+### 4. Start the bot
+
+```bash
+docker compose --profile default up -d
+docker compose --profile default logs -f
+```
+
+You should see `All adapters connected` when it's ready.
+
+### 5. Invite the bot to your guild
+
+```
+https://YOUR_DOMAIN/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=387072
+```
+
+### Feature Overview
+
+| Feature | Command |
+|---|---|
+| Ping | `!ping` |
+| XP leaderboard | `!leaderboard` |
+| User profile | `!profile` |
+| Reputation | `!rep` |
+| Reminders | `!remindme` |
+| Roll dice | `!roll` |
+| 8-ball | `!8ball` |
+| Coin flip | `!coinflip` |
+| Wikipedia | `!wiki` |
+| Translate | `!translate` |
+| Define | `!define` |
+| QR code | `!qrcode` |
+| Uptime | `!uptime` |
+
+---
+
 ## Notes
 
 - Red-Fluxer connects to `api.fluxer.app` by default. The `sed` commands in the Dockerfile patch it to point at your self-hosted instance instead.
 - Vinto supports `API_BASE` and `GATEWAY_URL` env vars natively — no patching required.
+- Astrokat and Fluxy require patching their `@fluxerjs/core` library to point at your self-hosted instance.
 - Community cogs for Red are built on top of Red's internal APIs and do not need modification to work with Fluxer.
 - The Red cog index at [index.discord.red](https://index.discord.red) lists hundreds of additional community cogs you can install with `!cog install`.
 - Music bot support on self-hosted Fluxer LiveKit is still evolving. Vinto is currently the most reliable option.
 - If running bots on a separate server, set `use_external_ip: true` in your Fluxer `livekit.yaml` or music bots will fail to stream audio.
-- Fluxy's `@fluxerjs/core` library hardcodes `api.fluxer.app` — the Dockerfile patch in step 4 is required for self-hosted instances.
+- Bot response latency of 500-800ms is normal for self-hosted Fluxer — this is the full message pipeline round-trip, not a hardware issue.
 
 ---
 

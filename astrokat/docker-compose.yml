@@ -1,0 +1,74 @@
+# =============================================================================
+# Astrokat — Docker Compose
+#
+# Choose your backend:
+#   docker compose up                  # SQLite (default, no external deps)
+#   docker compose --profile postgres up  # PostgreSQL
+#
+# Control which chat adapters run via the ADAPTERS env var in your .env file:
+#   ADAPTERS=discord          # Discord only
+#   ADAPTERS=fluxer           # Fluxer only
+#   ADAPTERS=discord,fluxer   # Both (default)
+# =============================================================================
+
+services:
+  # ── SQLite profile (standalone — no external services needed) ──────────────
+  astrokat-sqlite:
+    build: .
+    image: ghcr.io/mizarc/astrokat:latest
+    container_name: astrokat
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      # Comma-separated list of adapters to start (discord, fluxer, or both)
+      - ADAPTERS=${ADAPTERS:-discord,fluxer}
+      # Omit DATABASE_URL → reminder service uses SQLite automatically
+    volumes:
+      # Persist the SQLite database file across container restarts
+      - astrokat-data:/app/data
+      - ./fluxer.js:/app/dist/adapters/fluxer.js
+    restart: unless-stopped
+    profiles:
+      - sqlite
+      - default   # start with plain `docker compose up`
+
+  # ── PostgreSQL profile (clustered / multi-instance) ────────────────────────
+  astrokat-postgres:
+    build: .
+    image: ghcr.io/mizarc/astrokat:latest
+    container_name: astrokat
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      - ADAPTERS=${ADAPTERS:-discord,fluxer}
+      - DATABASE_URL=postgresql://astrokat:astrokat@postgres:5432/astrokat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - postgres
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: astrokat-postgres
+    environment:
+      POSTGRES_DB: astrokat
+      POSTGRES_USER: astrokat
+      POSTGRES_PASSWORD: astrokat
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astrokat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    profiles:
+      - postgres
+
+volumes:
+  astrokat-data:
+  postgres-data:

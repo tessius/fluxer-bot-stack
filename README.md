@@ -1,6 +1,6 @@
 # Self-Hosted Fluxer Bot Stack — Installation Guide
 
-This guide covers installing a full-featured bot stack on a self-hosted Fluxer instance. It includes **Red-Fluxer** (moderation, leveling, custom commands, and more), **Vinto Music Bot** (YouTube, SoundCloud, Spotify, Deezer), and **RoleBot** (reaction roles).
+This guide covers installing a full-featured bot stack on a self-hosted Fluxer instance. It includes **Red-Fluxer** (moderation, leveling, custom commands, and more), **Vinto Music Bot** (YouTube, SoundCloud, Spotify, Deezer), **RoleBot** (reaction roles), and **Fluxy** (moderation, admin, welcome messages, leveling, tickets, and a web dashboard).
 
 > **Tested on:** Ubuntu 24.04 Server with Docker Engine installed  
 > **Fluxer version:** Self-hosted via official docker-compose stack
@@ -12,6 +12,29 @@ This guide covers installing a full-featured bot stack on a self-hosted Fluxer i
 - A working self-hosted Fluxer instance (e.g. `https://chat.yourdomain.com`)
 - Docker Engine installed ([install guide](https://docs.docker.com/engine/install/ubuntu/))
 - A Fluxer admin account with a valid session token
+
+---
+
+## Running Bots on a Separate Server (Recommended)
+
+For best performance, run your bots on a separate server from your Fluxer instance. This reduces load on the Fluxer server and isolates any bot issues from affecting voice chat and messaging.
+
+**If you run bots on a separate server, you must update your Fluxer LiveKit config:**
+
+On your Fluxer server, edit `/opt/fluxer/livekit.yaml`:
+
+```yaml
+rtc:
+  use_external_ip: true
+```
+
+Then restart LiveKit:
+
+```bash
+sudo docker compose -f /opt/fluxer/docker-compose.yml restart livekit
+```
+
+Without this change, music bots on a remote server will fail with `Playback pipeline did not produce audio output in time` because LiveKit advertises the wrong IP for media streaming.
 
 ---
 
@@ -275,8 +298,6 @@ API_BASE=https://YOUR_DOMAIN/api/v1
 GATEWAY_URL=wss://YOUR_DOMAIN/gateway
 MONGODB_URI=mongodb://mongo:27017
 ```
-> **Note:** Find `VOICE_MAX_BITRATE` in the `.env` file and set it to match your Fluxer voice channel's bitrate in bps (e.g. `VOICE_MAX_BITRATE=64000` for 64kbps). Mismatching this causes frequent voice disconnections.
-
 
 ### 3. Start the bot
 
@@ -456,6 +477,112 @@ Users who react with 🎮 will receive the role. Removing the reaction removes t
 
 ---
 
+## Fluxy
+
+A feature-rich moderation and administration bot with automod, welcome/goodbye messages, logging, verification, leveling, tickets, and a built-in web dashboard.
+
+> Based on: [git.fluxy.gay/dog/fluxy](https://git.fluxy.gay/dog/fluxy)
+
+### 1. Create the bot application
+
+Use the curl command above with `"name":"Fluxy"`. Note the `bot.id` (Client ID), `client_secret`, and `bot.token`.
+
+### 2. Clone the repository
+
+```bash
+git clone https://git.fluxy.gay/dog/fluxy.git /opt/fluxy
+cd /opt/fluxy
+cp .env.docker.example .env
+nano .env
+```
+
+### 3. Configure the .env
+
+```env
+TOKEN=YOUR_BOT_TOKEN
+OWNER_ID=YOUR_USER_ID
+PREFIX=!
+API_ADMIN_TOKEN=YOUR_LONG_RANDOM_STRING
+DASHBOARD_URL=http://YOUR_BOT_DOMAIN:4000
+FLUXER_OAUTH_CLIENT_ID=YOUR_CLIENT_ID
+FLUXER_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET
+FLUXER_OAUTH_REDIRECT_URI=http://YOUR_BOT_DOMAIN:4000/auth/callback
+```
+
+### 4. Patch for self-hosted instances
+
+Fluxy's `@fluxerjs/core` library has hardcoded `api.fluxer.app` and `wss://gateway.fluxer.app`. Patch it in the Dockerfile after the node_modules are copied:
+
+```bash
+nano /opt/fluxy/Dockerfile
+```
+
+Find this line in the runtime stage:
+
+```dockerfile
+COPY --from=build /app/node_modules ./node_modules
+```
+
+Add these lines right after it:
+
+```dockerfile
+RUN find /app/node_modules -path "*/@fluxerjs/core/dist/*.js" -o -path "*/@fluxerjs/core/dist/*.mjs" | \
+    xargs sed -i \
+    -e "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g" \
+    -e "s|wss://gateway.fluxer.app|wss://YOUR_DOMAIN/gateway|g"
+```
+
+Also patch the source files before build:
+
+```bash
+grep -rl "api.fluxer.app" /opt/fluxy/src/ | xargs sed -i "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g"
+```
+
+> **Important:** Replace `YOUR_DOMAIN` with your actual Fluxer domain.
+
+### 5. Build and start
+
+```bash
+cd /opt/fluxy
+docker compose up -d --build
+docker compose logs -f fluxy-bot
+```
+
+You should see `OK [Startup] Init complete` and `OK [Gateway] online` when it's ready.
+
+### 6. Invite the bot to your guild
+
+```
+https://YOUR_DOMAIN/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=8
+```
+
+### 7. Access the dashboard
+
+The web dashboard is available at:
+
+```
+http://YOUR_BOT_DOMAIN:4000
+```
+
+### Feature Overview
+
+| Feature | Command |
+|---|---|
+| Ban/kick/timeout | `!ban` / `!kick` / `!timeout` |
+| Warn | `!warn` |
+| Clear messages | `!clear` |
+| Automod | `!automod` |
+| Welcome messages | `!welcome` |
+| Logging | `!log` |
+| Verification | `!verify` |
+| Leveling | `!leveling` / `!rank` |
+| Tickets | `!ticket` |
+| Server info | `!serverinfo` |
+| User info | `!userinfo` |
+| Starboard | `!starboard` |
+
+---
+
 ## Notes
 
 - Red-Fluxer connects to `api.fluxer.app` by default. The `sed` commands in the Dockerfile patch it to point at your self-hosted instance instead.
@@ -463,6 +590,8 @@ Users who react with 🎮 will receive the role. Removing the reaction removes t
 - Community cogs for Red are built on top of Red's internal APIs and do not need modification to work with Fluxer.
 - The Red cog index at [index.discord.red](https://index.discord.red) lists hundreds of additional community cogs you can install with `!cog install`.
 - Music bot support on self-hosted Fluxer LiveKit is still evolving. Vinto is currently the most reliable option.
+- If running bots on a separate server, set `use_external_ip: true` in your Fluxer `livekit.yaml` or music bots will fail to stream audio.
+- Fluxy's `@fluxerjs/core` library hardcodes `api.fluxer.app` — the Dockerfile patch in step 4 is required for self-hosted instances.
 
 ---
 

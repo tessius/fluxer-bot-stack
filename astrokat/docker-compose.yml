@@ -27,7 +27,6 @@ services:
     volumes:
       # Persist the SQLite database file across container restarts
       - astrokat-data:/app/data
-      - ./fluxer.js:/app/dist/adapters/fluxer.js
     restart: unless-stopped
     profiles:
       - sqlite

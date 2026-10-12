@@ -39,7 +39,6 @@ services:
       BOT_OWNER_USER_ID: ${BOT_OWNER_USER_ID:-}
     volumes:
       - /vinto/cookies.txt:/app/cookies.txt:ro
-      - ./gateway.js:/app/dist/src/gateway.js
     ports:
       - "${MONITORING_PORT:-9091}:${MONITORING_PORT:-9091}"
     logging:

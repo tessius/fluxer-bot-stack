@@ -100,16 +100,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 RUN pip install --no-cache-dir \
-    "git+https://github.com/Red-Fluxer-Patches/Red-DiscordBot.git@fluxer#egg=Red-DiscordBot[postgres]"
+    "git+https://github.com/Red-Fluxer-Patches/Red-DiscordBot.git@3d01534391f811bc62b77fe6927717130a50ee3f#egg=Red-DiscordBot[postgres]"
 
-RUN sed -i \
-    "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g" \
-    /usr/local/lib/python3.11/site-packages/discord/http.py \
-    /usr/local/lib/python3.11/site-packages/discord/webhook/sync.py \
-    /usr/local/lib/python3.11/site-packages/discord/webhook/async_.py && \
-    sed -i \
-    "s|wss://gateway.fluxer.app/|wss://YOUR_DOMAIN/gateway|g" \
-    /usr/local/lib/python3.11/site-packages/discord/gateway.py
+RUN SP=$(python -c "import discord,os;print(os.path.dirname(discord.__file__))") &&     sed -i     "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g"     $SP/http.py $SP/webhook/sync.py $SP/webhook/async_.py &&     sed -i     "s|wss://gateway.fluxer.app/|wss://YOUR_DOMAIN/gateway|g"     $SP/gateway.py
 
 RUN mkdir -p /data
 
@@ -121,7 +114,7 @@ VOLUME /data
 ENTRYPOINT ["/entrypoint.sh"]
 ```
 
-> **Important:** Replace `YOUR_DOMAIN` with your actual domain (e.g. `chat.saltygamerslounge.net`) in the two `sed` commands.
+> **Important:** Replace `YOUR_DOMAIN` with your actual domain (e.g. `chat.saltygamerslounge.net`) in the two `sed` commands. The fork is pinned to a known-good commit (Oct 9 2026); to update, change the SHA to a newer commit of the `fluxer` branch and rebuild. The `sed` path is detected automatically, so Python version changes are fine.
 
 Create the `entrypoint.sh`:
 
@@ -314,36 +307,9 @@ You should see `Gateway ready {"user":"Vinto"}` when it's connected.
 https://YOUR_DOMAIN/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=387072
 ```
 
-### 5. Fix bot showing as deafened
+### 5. Bot showing as deafened
 
-By default Vinto joins voice channels with `self_deaf: true`, which shows the bot as deafened in the UI even though audio works fine. To fix it:
-
-```bash
-sudo docker compose exec app cat /app/dist/src/gateway.js | sudo tee /opt/vinto/gateway.js > /dev/null
-sudo nano /opt/vinto/gateway.js
-```
-
-Find this block (around line 157):
-
-```js
-channel_id: channelId,
-self_mute: false,
-self_deaf: true,
-```
-
-Change `self_deaf: true` to `self_deaf: false`. Save and exit.
-
-Then add a volume mount to your `docker-compose.yml` under the `app` service volumes:
-
-```yaml
-- /opt/vinto/gateway.js:/app/dist/src/gateway.js
-```
-
-Then restart:
-
-```bash
-sudo docker compose up -d --force-recreate app
-```
+Vinto now joins voice self-deafened only while its earrape protection is enabled. If the bot shows as deafened in the UI, turn earrape protection off in the bot settings. No file patching is needed (the old `gateway.js` mount was removed and must not be reused).
 
 ### 6. Usage
 
@@ -437,7 +403,7 @@ bot = fluxer.Bot(
 ### 4. Fix data directory permissions
 
 ```bash
-sudo chmod 777 /opt/rolebot/data
+sudo chown 999:999 /opt/rolebot/data
 ```
 
 ### 5. Build and run
@@ -504,43 +470,27 @@ OWNER_ID=YOUR_USER_ID
 PREFIX=!
 API_ADMIN_TOKEN=YOUR_LONG_RANDOM_STRING
 DASHBOARD_URL=http://YOUR_BOT_DOMAIN:4000
+
+# Self-hosted Fluxer (native support, no patching needed)
+FLUXER_INSTANCE_API=https://YOUR_DOMAIN/api
+FLUXER_INSTANCE_GATEWAY=wss://YOUR_DOMAIN/gateway
+FLUXER_INSTANCE_WEB=https://YOUR_DOMAIN
+FLUXER_INSTANCE_MEDIA=https://YOUR_DOMAIN
+
 FLUXER_OAUTH_CLIENT_ID=YOUR_CLIENT_ID
 FLUXER_OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET
 FLUXER_OAUTH_REDIRECT_URI=http://YOUR_BOT_DOMAIN:4000/auth/callback
+
+# Dashboard build-time values, keep aligned with the instance above
+VITE_FLUXER_INSTANCE_API=https://YOUR_DOMAIN/api
+VITE_FLUXER_INSTANCE_WEB=https://YOUR_DOMAIN
+VITE_FLUXER_INSTANCE_MEDIA=https://YOUR_DOMAIN
+VITE_FLUXER_CLIENT_ID=YOUR_CLIENT_ID
 ```
 
-### 4. Patch for self-hosted instances
+> Fluxy reads the instance URLs natively, so the old Dockerfile `sed` patches are gone. Adjust `MEDIA` if your instance serves media from a separate host.
 
-Fluxy's `@fluxerjs/core` library has hardcoded `api.fluxer.app` and `wss://gateway.fluxer.app`. Patch it in the Dockerfile after the node_modules are copied:
-
-```bash
-nano /opt/fluxy/Dockerfile
-```
-
-Find this line in the runtime stage:
-
-```dockerfile
-COPY --from=build /app/node_modules ./node_modules
-```
-
-Add these lines right after it:
-
-```dockerfile
-RUN find /app/node_modules -path "*/@fluxerjs/core/dist/*.js" -o -path "*/@fluxerjs/core/dist/*.mjs" | \
-    xargs sed -i \
-    -e "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g" \
-    -e "s|wss://gateway.fluxer.app|wss://YOUR_DOMAIN/gateway|g"
-```
-
-Also patch the source files before build:
-
-```bash
-grep -rl "api.fluxer.app" /opt/fluxy/src/ | xargs sed -i "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g"
-```
-
-> **Important:** Replace `YOUR_DOMAIN` with your actual Fluxer domain.
-
-### 5. Build and start
+### 4. Build and start
 
 ```bash
 cd /opt/fluxy
@@ -550,13 +500,13 @@ docker compose logs -f fluxy-bot
 
 You should see `OK [Startup] Init complete` and `OK [Gateway] online` when it's ready.
 
-### 6. Invite the bot to your guild
+### 5. Invite the bot to your guild
 
 ```
 https://YOUR_DOMAIN/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=8
 ```
 
-### 7. Access the dashboard
+### 6. Access the dashboard
 
 The web dashboard is available at:
 
@@ -614,30 +564,15 @@ FLUXER_GATEWAY_URL=wss://YOUR_DOMAIN/gateway
 
 Make sure `DATABASE_URL` is commented out to use SQLite.
 
-### 3. Patch the Fluxer adapter
+### 3. Self-hosted gateway
 
-Astrokat's `@fluxerjs/core` library hardcodes `api.fluxer.app`. Extract and patch the adapter:
+Astrokat reads `FLUXER_API_URL` natively, so no adapter patch is needed. The gateway URL is expected to be discovered from your API. If the bot connects to `gateway.fluxer.app` instead (logs show a failed or wrong-host connection), extract and patch the adapter as a fallback:
 
 ```bash
 docker run --rm ghcr.io/mizarc/astrokat:latest sh -c "cat /app/dist/adapters/fluxer.js" > /opt/bots/astrokat/fluxer.js
-nano /opt/bots/astrokat/fluxer.js
 ```
 
-Find:
-```js
-new Client({ intents: 0 })
-```
-
-Change to:
-```js
-new Client({ intents: 0, rest: { api: process.env.FLUXER_API_URL ?? "https://api.fluxer.app" }, ws: { url: process.env.FLUXER_GATEWAY_URL ?? "wss://gateway.fluxer.app" } })
-```
-
-Then add the volume mount to `docker-compose.yml` under the `astrokat-sqlite` service volumes:
-
-```yaml
-- /opt/bots/astrokat/fluxer.js:/app/dist/adapters/fluxer.js
-```
+Add `ws: { url: process.env.FLUXER_GATEWAY_URL }` to the `new Client({...})` options, mount it under the `astrokat-sqlite` volumes (`- ./fluxer.js:/app/dist/adapters/fluxer.js`), and **re-extract it after every image update**.
 
 ### 4. Start the bot
 
@@ -677,8 +612,7 @@ https://YOUR_DOMAIN/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissi
 ## Notes
 
 - Red-Fluxer connects to `api.fluxer.app` by default. The `sed` commands in the Dockerfile patch it to point at your self-hosted instance instead.
-- Vinto supports `API_BASE` and `GATEWAY_URL` env vars natively — no patching required.
-- Astrokat and Fluxy require patching their `@fluxerjs/core` library to point at your self-hosted instance.
+- Vinto, Fluxy and Astrokat (API URL) support self-hosted URLs through env vars — no patching required.
 - Community cogs for Red are built on top of Red's internal APIs and do not need modification to work with Fluxer.
 - The Red cog index at [index.discord.red](https://index.discord.red) lists hundreds of additional community cogs you can install with `!cog install`.
 - Music bot support on self-hosted Fluxer LiveKit is still evolving. Vinto is currently the most reliable option.
@@ -687,4 +621,4 @@ https://YOUR_DOMAIN/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissi
 
 ---
 
-*Guide compiled from a working self-hosted Fluxer deployment on Ubuntu 24.04 — July 2026*
+*Guide compiled from a working self-hosted Fluxer deployment on Ubuntu 24.04 — updated October 2026*

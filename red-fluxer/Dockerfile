@@ -12,16 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 RUN pip install --no-cache-dir \
-    "git+https://github.com/Red-Fluxer-Patches/Red-DiscordBot.git@fluxer#egg=Red-DiscordBot[postgres]"
+    "git+https://github.com/Red-Fluxer-Patches/Red-DiscordBot.git@3d01534391f811bc62b77fe6927717130a50ee3f#egg=Red-DiscordBot[postgres]"
 
-RUN sed -i \
+RUN SP=$(python -c "import discord,os;print(os.path.dirname(discord.__file__))") && \
+    sed -i \
     "s|https://api.fluxer.app|https://chat.saltygamerslounge.net/api|g" \
-    /usr/local/lib/python3.11/site-packages/discord/http.py \
-    /usr/local/lib/python3.11/site-packages/discord/webhook/sync.py \
-    /usr/local/lib/python3.11/site-packages/discord/webhook/async_.py && \
+    $SP/http.py $SP/webhook/sync.py $SP/webhook/async_.py && \
     sed -i \
     "s|wss://gateway.fluxer.app/|wss://chat.saltygamerslounge.net/gateway|g" \
-    /usr/local/lib/python3.11/site-packages/discord/gateway.py
+    $SP/gateway.py
 
 RUN mkdir -p /data
 

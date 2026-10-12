@@ -12,7 +12,12 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm run build
 WORKDIR /app/dashboard
-RUN printf 'VITE_MOCK_MODE=false\n' > .env.production
+ARG VITE_FLUXER_INSTANCE_API=https://api.fluxer.app
+ARG VITE_FLUXER_INSTANCE_WEB=https://web.fluxer.app
+ARG VITE_FLUXER_INSTANCE_MEDIA=https://fluxerusercontent.com
+ARG VITE_FLUXER_CLIENT_ID=1474069931333816428
+RUN printf 'VITE_MOCK_MODE=false\nVITE_FLUXER_INSTANCE_API=%s\nVITE_FLUXER_INSTANCE_WEB=%s\nVITE_FLUXER_INSTANCE_MEDIA=%s\nVITE_FLUXER_CLIENT_ID=%s\n' \
+  "$VITE_FLUXER_INSTANCE_API" "$VITE_FLUXER_INSTANCE_WEB" "$VITE_FLUXER_INSTANCE_MEDIA" "$VITE_FLUXER_CLIENT_ID" > .env.production
 RUN pnpm run build
 WORKDIR /app
 ENV CI=true
@@ -24,10 +29,6 @@ WORKDIR /app
 
 COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build /app/node_modules ./node_modules
-RUN find /app/node_modules -path "*/@fluxerjs/core/dist/*.js" -o -path "*/@fluxerjs/core/dist/*.mjs" | \
-    xargs sed -i \
-    -e "s|https://api.fluxer.app|https://YOUR_DOMAIN/api|g" \
-    -e "s|wss://gateway.fluxer.app|wss://YOUR_DOMAIN/gateway|g"
 COPY --from=build /app/build ./build
 COPY --from=build /app/dashboard/dist ./dashboard/dist
 COPY --from=build /app/.forgejo/.shrek ./.forgejo/.shrek
